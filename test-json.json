@@ -1,0 +1,21 @@
+{
+	"id": "Forge 1.16.5",
+	"jar": "1.16.5",
+	"family": "Forge-1.16",
+	"time": "2022-05-25T16:43:12.754Z",
+	"releaseTime": "2021-01-14T16:05:32Z",
+	"type": "modified",
+	"mainClass": "cpw.mods.modlauncher.Launcher",
+	"minimumLauncherVersion": 21,
+	"tlauncherVersion": 11,
+	"libraries": [{
+		"name": "net.minecraftforge:forge:1.16.5-36.2.34",
+		"downloads": {
+			"artifact": {
+				"url": "https://files.minecraftforge.net/maven/net/minecraftforge/forge/1.16.5-36.2.34/forge-1.16.5-36.2.34-launcher.jar",
+				"sha1": "b05f056824252928b59c746f8a28fe2cf36db6c0",
+				"size": 212608
+			}
+		}
+	}]
+}
