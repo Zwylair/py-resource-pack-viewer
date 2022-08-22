@@ -1,31 +1,57 @@
 from json import loads, dump, load, JSONDecodeError
 from subprocess import Popen
-from os.path import getsize, exists, split
-from os import getenv, remove
+from os.path import getsize, split, exists
+from os import getenv, remove, mkdir
 from random import getrandbits
 from datetime import datetime
+from io import BytesIO
+from urllib.request import urlopen
 import dearpygui.dearpygui as dpg
 from PIL import Image
 
-__version__ = 'b22.08.2022a'
-SUBLIME_TEXT_PATH = 'C:\\Program Files\\Sublime Text\\sublime_text.exe'
-NOTEPAD_PP_PATH = 'C:\\Program Files\\Notepad++\\notepad++.exe'
-NOTEPAD_PATH = 'C:\\Windows\\notepad.exe'
-SETTINGS_FILENAME = 'settings.json'
+__version__ = 'b22.08.2022b'
 TMP = getenv('tmp')
+LOCALAPPDATA = getenv('localappdata')
+SETTINGS_FILENAME = 'assets/settings.json'
+ICON_FILENAME = 'assets/icon.ico'
+PACK_MCMETA_FILENAME = 'assets/pack_mcmeta template.json'
+SETTINGS_TEMPLATE = {'last_used_path': '', 'preferred_editor': 'Notepad'}
+PACK_MCMETA_TEMPLATE = open(PACK_MCMETA_FILENAME).read()
+EDITORS = {
+    'Notepad': 'C:\\Windows\\notepad.exe',
+    'Notepad++': 'C:\\Program Files\\Notepad++\\notepad++.exe',
+    'Sublime Text': 'C:\\Program Files\\Sublime Text\\sublime_text.exe',
+    'AkelPad': 'C:\\Program Files (x86)\\AkelPad\\AkelPad.exe',
+    'VS Code': f'{LOCALAPPDATA}\\Programs\\Microsoft VS Code\\Code.exe'
+}
+MC_PACK_FORMAT = {
+    '1.19.x': '9',
+    '1.18.x': '8',
+    '1.17.x': '7',
+    '1.16.2 - 1.16.5': '6',
+    '1.15 - 1.16.1': '5',
+    '1.13 - 1.14.4': '4',
+    '1.11 - 1.12.2': '3',
+    '1.9 - 1.10.2': '2',
+    '1.6.1 - 1.8.9': '1'
+}
 
 # load the settings, if error create the new one
 try:
     SETTINGS: dict = load(open(SETTINGS_FILENAME))
-    SETTINGS.get('last_used_path')
+    for setting_key in SETTINGS_TEMPLATE.keys():
+        try:
+            SETTINGS.get(setting_key)
+        except BaseException:
+            SETTINGS[setting_key] = SETTINGS_TEMPLATE[setting_key]
 except BaseException:
-    SETTINGS = {'last_used_path': ''}
+    SETTINGS = SETTINGS_TEMPLATE
     dump(SETTINGS, open(SETTINGS_FILENAME, 'w'))
 
 # create a main window
 dpg.create_context()
-dpg.create_viewport(title=f'JPack Editor version {__version__}', width=800, height=700, resizable=False)
-dpg.set_viewport_small_icon('Icon.ico')
+dpg.create_viewport(title=f'JPack Editor version {__version__}', width=800, height=700)
+dpg.set_viewport_small_icon(ICON_FILENAME)
 
 
 def to_fixed(num_obj: float, digits=0) -> float:
@@ -44,13 +70,17 @@ def __write_field(text: str, field: str):
         dpg.set_value(field, text)
 
 
+def __dump_settings(key: str, value):
+    SETTINGS[key] = value
+    dump(SETTINGS, open(SETTINGS_FILENAME, 'w'))
+
+
 def __load_file(dpg_info: dict):
     # get path and name of the file
     filename, path = list(dpg_info['selections'].items())[0]
 
     # save the last used path to settings
-    SETTINGS['last_used_path'] = split(path)[0]
-    dump(SETTINGS, open(SETTINGS_FILENAME, 'w'))
+    __dump_settings('last_used_path', split(path)[0])
 
     # load the contents of the file, if there is an error print it out in the log
     try:
@@ -82,20 +112,22 @@ def __load_file(dpg_info: dict):
         __write_field('[ERROR]: Failed to load the json content', 'program_logs')
     else:
         textures_paths = list(file_content.values())
-        textures_paths = [f'{i}.png' for i in list(set(textures_paths))]  # deleting duplicates and adding ".png" to the end
+        textures_paths = [f'{txture}.png' for txture in list(set(textures_paths))]  # deleting duplicates and adding ".png" to the end
         # define the texture partition (minecraft/optifine etc.) (assets/PARTITION/textures/...)
         try:
             tp_root: list = path.replace('\\', '/').split('/')  # '...', '...', '...', 'resourcepacks', 'RP_NAME', '...'
             tp_root: list = tp_root[:tp_root.index('resourcepacks') + 2]  # ['...', 'resourcepacks', 'RP_NAME']
             tp_root: str = '/'.join(list(tp_root))
         except BaseException:
-            __write_field("[ERROR]: Unable to define texture paths (json not in resourcepack's folder)\n", 'program_logs')
+            __write_field("[ERROR]: Unable to define texture paths (json not in resourcepack's folder)\n",
+                          'program_logs')
         else:
 
             # get full paths of the textures
             out_textures_paths = []
             for texture in textures_paths:
-                texture = texture.split(':')  # if exists, texture = ['PARTITION', 'block|item/...'], if not texture = ['block|item/...']
+                texture = texture.split(
+                    ':')  # if exists, texture = ['PARTITION', 'block|item/...'], if not texture = ['block|item/...']
                 if len(texture) == 1:  # if len(texture) == len(['block|item/...'])
                     out_textures_paths.append(f'{tp_root}/assets/minecraft/textures/{texture[0]}')
                 else:
@@ -132,11 +164,11 @@ def __load_file(dpg_info: dict):
             # show the loaded textures
             with dpg.window(width=128, height=128, no_title_bar=True, no_resize=True, no_close=True, no_move=True):
                 x, y = [0, 0]
-                for i in loaded:
+                for ldl_texture in loaded:
                     if x == 4:
                         x, y = [0, y + 1]
                     space = 3 + 13 * x if x != 0 else 3  # 3, because if a texture is near a window border, it is clipped, 13 * x is the pixel distance between textures
-                    dpg.add_image(i, pos=[x * 32 + space, y * 32])
+                    dpg.add_image(ldl_texture, pos=[x * 32 + space, y * 32])
                     x += 1
 
 
@@ -153,12 +185,13 @@ def __clear_field(obj: str):
 
 
 def __open_in_external_editor(collect_field: str):
-    file_path = dpg.get_value(collect_field)[7:]  # remove "Path: " text in the start
-    for editor in [SUBLIME_TEXT_PATH, NOTEPAD_PP_PATH, NOTEPAD_PATH]:
-        if exists(editor):
-            Popen(f'"{editor}" "{file_path}"')
-            __write_field('[INFO]: Opened json in external editor', 'program_logs')
-            break
+    try:
+        file_path = dpg.get_value(collect_field)[7:]  # remove "Path: " text in the start
+        editor = EDITORS[SETTINGS['preferred_editor']]
+        Popen(f'"{editor}" "{file_path}"')
+        __write_field('[INFO]: Opened json in external editor', 'program_logs')
+    except BaseException:
+        __write_field('[ERROR]: Unable to open external editor', 'program_logs')
 
 
 def __open_file_folder():
@@ -176,7 +209,8 @@ def __open_file_folder():
 def __open_rp_folder():
     try:
         file_path: str = dpg.get_value('file_path_obj')[7:]  # '.../.../FILE'
-        file_path: list = file_path.replace('\\', '/').split('/')[:-1]  # ['...', '...', 'resourcepacks', 'RP_NAME', '...']
+        file_path: list = file_path.replace('\\', '/').split('/')[
+                          :-1]  # ['...', '...', 'resourcepacks', 'RP_NAME', '...']
         file_path = file_path[:file_path.index('resourcepacks') + 2]  # ['...', '...', 'resourcepacks', 'RP_NAME']
         file_path: str = '\\'.join(file_path)  # '...\...\resourcepacks\RP_NAME'
 
@@ -186,27 +220,96 @@ def __open_rp_folder():
         __write_field('[ERROR]: Unable to open resourcepack folder', 'program_logs')
 
 
+def __create_tp(rp_info: dict):
+    rp_root: str = rp_info.get('rp_path').replace('\\', '/')
+    rp_root: str = rp_root[:-1] if rp_root[-1] in '/' else rp_root
+    rp_name: str = rp_info.get('rp_name')
+    rp_desc: str = rp_info.get('rp_desc')
+    rp_pack_mcmeta: str = MC_PACK_FORMAT[rp_info.get('pack_mcmeta')]
+    create_pack_png: bool = rp_info.get('create_pack_png')
+    if exists(rp_root):
+        # create rp dir
+        try:
+            mkdir(f'{rp_root}/{rp_name}')
+            mkdir(f'{rp_root}/{rp_name}/assets')
+        except BaseException:
+            __write_field('[ERROR]: Unable to create folder', 'program_logs')
+
+        pack_mcmeta = PACK_MCMETA_TEMPLATE.replace('|!TEXT_TO_REPLACE_DONT_REMOVE_THIS_TEXT!|', rp_desc)
+        pack_mcmeta = pack_mcmeta.replace('TEXT_TO_REPLACE_PACK_MCMETA_DONT_REMOVE_OR_EDIT_THIS', rp_pack_mcmeta)
+
+        # save all
+        # create the pack.png
+        if create_pack_png:
+            try:
+                pack_png = urlopen('https://picsum.photos/128/128').read()
+                pack_png = Image.open(BytesIO(pack_png))
+                pack_png.save(f'{rp_root}/{rp_name}/pack.png', bitmap_format='png')
+            except BaseException:
+                __write_field('[INFO]: Unable to connect to the internet, skip creating "pack.png"', 'program_logs')
+
+        # save pack_mcmeta
+        try:
+            open(f'{rp_root}/{rp_name}/pack.mcmeta', 'w').write(pack_mcmeta)
+        except BaseException:
+            __write_field('[ERROR]: Unable to create "pack.mcmeta"', 'program_logs')
+
+        __write_field('[INFO]: Resource pack successfully created', 'program_logs')
+    else:
+        __write_field("[ERROR]: The given folder doesn't exists", 'program_logs')
+
+
+def __show_rp_window():
+    # block preview window
+    with dpg.window(pos=[208, 222]):
+        texture_pack_info = {'rp_path': '',
+                             'rp_name': 'default',
+                             'rp_desc': '',
+                             'pack_mcmeta': '1.19.x',
+                             'create_pack_png': True}
+        dpg.add_input_text(hint='Enter the path to create resource pack (.../.minecraft/resourcepacks)', width=384, height=128,
+                           callback=lambda s, a, u: texture_pack_info.update({'rp_path': a}))
+        dpg.add_input_text(hint='Enter the resource pack name', width=384, height=128,
+                           callback=lambda s, a, u: texture_pack_info.update({'rp_name': a}))
+        dpg.add_input_text(hint='Enter the resource pack description', width=384, height=128,
+                           callback=lambda s, a, u: texture_pack_info.update({'rp_desc': a}))
+        dpg.add_combo(list(MC_PACK_FORMAT.keys()), default_value=list(MC_PACK_FORMAT.keys())[0],
+                      callback=lambda s, a, u: texture_pack_info.update({'pack_mcmeta': a}))
+        dpg.add_checkbox(label='Create "pack.png"', default_value=True,
+                         callback=lambda s, a, u: texture_pack_info.update({'create_pack_png': a}))
+        dpg.add_button(label='Submit', callback=lambda s, a, u: __create_tp(texture_pack_info))
+
+
 # block preview window
 with dpg.window(width=128, height=128, no_title_bar=True, no_resize=True, no_close=True, no_move=True):
     dpg.add_text('Texture previews\n'
                  'will be here')
 
-# json text preview window
-with dpg.window(width=662, height=274, no_title_bar=True, no_resize=True, no_close=True, no_move=True, pos=[128, 0]):
-    # json text field
-    dpg.add_input_text(width=640, height=235, multiline=True, tag='json_field')
+# settings window
+with dpg.window(width=128, height=128, no_title_bar=True, no_resize=True, no_close=True, no_move=True, pos=[0, 533]):
+    dpg.add_text('Preferred editor:')
+    dpg.add_combo(list(EDITORS.keys()), default_value=SETTINGS['preferred_editor'],
+                  callback=lambda s, a, u: __dump_settings('preferred_editor', a))
 
+# buttons window
+with dpg.window(width=128, height=405, no_title_bar=True, no_resize=True, no_close=True, no_move=True, pos=[0, 128]):
     # register a file dialog
     with dpg.file_dialog(label='File Explorer', width=500, height=400, show=False, user_data='json_field',
                          callback=lambda s, a, u: __load_file(a), tag='__filedialog', file_count=1,
                          default_path=f'{SETTINGS["last_used_path"]}\\'):
         dpg.add_file_extension('.*')
 
-    dpg.add_button(label='Select file', user_data='__filedialog', callback=lambda s, a, u: dpg.configure_item(u, show=True), pos=[7, 246])
-    dpg.add_button(label='Open rp folder', callback=lambda s, a, u: __open_rp_folder(), pos=[94, 246])
-    dpg.add_button(label='Open file folder', callback=lambda s, a, u: __open_file_folder(), pos=[202, 246])
-    dpg.add_button(label='Open in external editor', callback=lambda s, a, u: __open_in_external_editor('file_path_obj'), pos=[324, 246])
-    dpg.add_button(label='Check json for errors', pos=[495, 246], callback=__check_json_for_errors)
+    dpg.add_button(label='Select file', user_data='__filedialog', callback=lambda s, a, u: dpg.configure_item(u, show=True))
+    dpg.add_button(label='Check json', callback=__check_json_for_errors)
+    dpg.add_button(label='Open rp folder', callback=lambda s, a, u: __open_rp_folder())
+    dpg.add_button(label='Open file folder', callback=lambda s, a, u: __open_file_folder())
+    dpg.add_button(label='Open in editor', callback=lambda s, a, u: __open_in_external_editor('file_path_obj'))
+    dpg.add_button(label='Create new tp', callback=lambda s, a, u: __show_rp_window())
+
+# json text preview window
+with dpg.window(width=662, height=274, no_title_bar=True, no_resize=True, no_close=True, no_move=True, pos=[128, 0]):
+    # json text field  || width=640, height=235 if you want to add some buttons
+    dpg.add_input_text(width=640, height=257, multiline=True, tag='json_field', default_value='This will contain the json text')
 
 # information window
 with dpg.window(width=662, height=128, no_title_bar=True, no_resize=True, no_close=True, no_move=True, pos=[128, 274]):
@@ -217,11 +320,11 @@ with dpg.window(width=662, height=128, no_title_bar=True, no_resize=True, no_clo
     dpg.add_text(tag='file_size_obj')
 
 # error window
-with dpg.window(width=672, height=259, no_title_bar=True, no_resize=True, no_close=True, no_move=True, pos=[128, 402]):
+with dpg.window(width=662, height=259, no_title_bar=True, no_resize=True, no_close=True, no_move=True, pos=[128, 402]):
     dpg.add_text('Program logs:')
     dpg.add_input_text(multiline=True, readonly=True, width=640, height=215, tag='program_logs')
-    dpg.add_button(label='Clear logs', user_data='program_logs', callback=lambda s, a, u: __clear_field(u), pos=[569, 9])
-
+    dpg.add_button(label='Clear logs', user_data='program_logs', callback=lambda s, a, u: __clear_field(u),
+                   pos=[569, 9])
 
 # Start the dpg
 dpg.setup_dearpygui()
