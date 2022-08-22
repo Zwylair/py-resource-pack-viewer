@@ -1,0 +1,2 @@
+pillow==9.2.0
+dearpygui==1.6.1
